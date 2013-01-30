@@ -12,7 +12,7 @@ keyboard us
 timezone US/Eastern
 auth --useshadow --enablemd5
 # we need to catch selinux errors
-selinux --permissive
+selinux --enforcing
 firewall --enabled --service=mdns
 xconfig --startxonboot
 part / --size 4096 --fstype ext4
@@ -20,13 +20,15 @@ part /var/lib/libvirt --size 12288 --fstype ext4
 services --enabled=NetworkManager --disabled=network,sshd
 
 #repo --name=rawhide --mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?repo=rawhide&arch=$basearch
-#repo --name=fedora --mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?repo=fedora-$releasever&arch=$basearch
-#repo --name=updates --mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?repo=updates-released-f$releasever&arch=$basearch
+repo --name=fedora --mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?repo=fedora-$releasever&arch=$basearch
+repo --name=updates --mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?repo=updates-released-f$releasever&arch=$basearch
 #repo --name=updates-testing --mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?repo=updates-testing-f$releasever&arch=$basearch
-repo --name=euler --baseurl=http://euler/fedora/releases
-repo --name=euler-testing --baseurl=http://euler/fedora/updates/testing
-repo --name=euler-updates --baseurl=http://euler/fedora/updates/18
+#repo --name=euler --baseurl=http://euler/fedora/releases
+#repo --name=euler-testing --baseurl=http://euler/fedora/updates/testing
+#repo --name=euler-updates --baseurl=http://euler/fedora/updates/18
 %packages
+@firefox
+@gnome-desktop
 @base-x
 @base
 @core
@@ -55,6 +57,7 @@ libvirt-daemon
 virt-viewer
 novnc
 openstack-nova
+openstack-nova-common
 openstack-nova-novncproxy
 openstack-swift
 openstack-swift-doc
@@ -77,7 +80,6 @@ python-nova
 python-keystone
 python-passlib
 openstack-keystone
-openstack-packstack
 mysql-server
 qpid-cpp-server-daemon
 qpid-cpp-server
@@ -93,6 +95,7 @@ spice-gtk
 gtk-vnc-python
 net-tools
 puppet
+patch
 %end
 
 %post
@@ -315,94 +318,13 @@ fi
 
 echo "nbd" > /etc/modules-load.d/nbd.conf
 sed -i 's/^SELINUX=.*/SELINUX=permissive/' /etc/selinux/config
-setenforce permissive
-
-systemctl start sshd.service
-ssh-keygen -N "" -f /root/.ssh/id_rsa
-cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
-chmod 600 /root/.ssh/authorized_keys
-# packstack answer file
-cat > /root/packstack-answer-file << EOP
-[general]
-CONFIG_DEBUG=y
-CONFIG_GLANCE_INSTALL=y
-CONFIG_CINDER_INSTALL=n
-CONFIG_NOVA_INSTALL=y
-CONFIG_HORIZON_INSTALL=y
-CONFIG_SWIFT_INSTALL=n
-CONFIG_CLIENT_INSTALL=y
-CONFIG_SSH_KEY=/root/.ssh/id_rsa.pub
-CONFIG_MYSQL_HOST=127.0.0.1
-CONFIG_MYSQL_USER=root
-CONFIG_MYSQL_PW=mypwd
-CONFIG_QPID_HOST=127.0.0.1
-CONFIG_KEYSTONE_HOST=127.0.0.1
-CONFIG_KEYSTONE_ADMINTOKEN=0bcf6981416e475398775aee4798a221
-CONFIG_KEYSTONE_ADMINPASSWD=fe5f5c
-CONFIG_GLANCE_HOST=127.0.0.1
-CONFIG_CINDER_HOST=127.0.0.1
-CONFIG_NOVA_API_HOST=127.0.0.1
-CONFIG_NOVA_CERT_HOST=127.0.0.1
-CONFIG_NOVA_VNCPROXY_HOST=127.0.0.1
-CONFIG_NOVA_COMPUTE_HOSTS=127.0.0.1
-CONFIG_LIBVIRT_TYPE=kvm
-CONFIG_NOVA_COMPUTE_PRIVIF=eth0
-CONFIG_NOVA_NETWORK_HOST=127.0.0.1
-CONFIG_NOVA_NETWORK_PUBIF=eth0
-CONFIG_NOVA_NETWORK_PRIVIF=eth0
-CONFIG_NOVA_NETWORK_FIXEDRANGE=192.168.32.0/22
-CONFIG_NOVA_NETWORK_FLOATRANGE=10.3.4.0/22
-CONFIG_NOVA_SCHED_HOST=127.0.0.1
-CONFIG_OSCLIENT_HOST=127.0.0.1
-CONFIG_HORIZON_HOST=127.0.0.1
-CONFIG_HORIZON_SECRET_KEY=8d2408c246cc4503a89e444ebbcc3650
-CONFIG_SWIFT_PROXY_HOSTS=127.0.0.1
-CONFIG_SWIFT_STORAGE_HOSTS=127.0.0.1
-CONFIG_SWIFT_STORAGE_ZONES=1
-CONFIG_SWIFT_STORAGE_REPLICAS=1
-CONFIG_SWIFT_STORAGE_FSTYPE=ext4
-CONFIG_USE_EPEL=n
-CONFIG_REPO=
-CONFIG_RH_USERNAME=
-CONFIG_RH_PASSWORD=
-EOP
-
-cat > /root/.my.cnf << EOM
-[client]
-password="mypwd"
-EOM
 
 systemctl start mysqld.service
 mysqladmin password mypwd
 
-export HOME=/root
-packstack --answer-file=/root/packstack-answer-file
-#rm -f /root/keyfile
-#rm -f /root/keyfile.pub
-
-# fire up openstack services
-#systemctl start openstack-cinder-api.service
-#systemctl start openstack-cinder-scheduler.service
-#systemctl start openstack-cinder-volume.service
-systemctl start openstack-glance-api.service
-systemctl start openstack-glance-registry.service
-systemctl start openstack-glance-registry.service
-systemctl start openstack-keystone.service
-systemctl start openstack-nova-api.service
-systemctl start openstack-nova-cert.service
-systemctl start openstack-nova-compute.service
-systemctl start openstack-nova-consoleauth.service
-systemctl start openstack-nova-console.service
-systemctl start openstack-nova-metadata-api.service
-systemctl start openstack-nova-scheduler.service
-systemctl start openstack-nova-xvpvncproxy.service
-systemctl start openstack-swift-account.service
-systemctl start "openstack-swift-account@.service"
-systemctl start openstack-swift-container.service
-systemctl start "openstack-swift-container@.service"
-systemctl start openstack-swift-object.service
-systemctl start "openstack-swift-object@.service"
-systemctl start openstack-swift-proxy.service
+cp /usr/bin/openstack-demo-install /tmp
+sed -i "s/ROOT_DB_PW=\\\$(getpassword 'database root')/ROOT_DB_PW=\"mypwd\"/" /tmp/openstack-demo-install
+./tmp/openstack-demo-install
 
 EOF
 
