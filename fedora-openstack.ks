@@ -83,6 +83,7 @@ openstack-keystone
 mysql-server
 qpid-cpp-server-daemon
 qpid-cpp-server
+qpid-cpp-client
 memcached 
 nbd
 sudo
@@ -94,8 +95,7 @@ openssh-server
 spice-gtk
 gtk-vnc-python
 net-tools
-puppet
-patch
+libvirt
 %end
 
 %post
