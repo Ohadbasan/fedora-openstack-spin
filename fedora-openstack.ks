@@ -6,40 +6,12 @@
 #
 # Maintainer(s):
 # - Matthias Runge <mrunge@fedoraproject.org>
+%include fedora-live-desktop.ks
 
-lang en_US.UTF-8
-keyboard us
-timezone US/Eastern
-auth --useshadow --enablemd5
-# we need to catch selinux errors
-selinux --enforcing
-firewall --enabled --service=mdns
-xconfig --startxonboot
-part / --size 4096 --fstype ext4
+part / --size 8192 --fstype ext4
 part /var/lib/libvirt --size 12288 --fstype ext4
-services --enabled=NetworkManager --disabled=network,sshd
 
-#repo --name=rawhide --mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?repo=rawhide&arch=$basearch
-repo --name=fedora --mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?repo=fedora-$releasever&arch=$basearch
-repo --name=updates --mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?repo=updates-released-f$releasever&arch=$basearch
-#repo --name=updates-testing --mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?repo=updates-testing-f$releasever&arch=$basearch
-#repo --name=euler --baseurl=http://euler/fedora/releases
-#repo --name=euler-testing --baseurl=http://euler/fedora/updates/testing
-#repo --name=euler-updates --baseurl=http://euler/fedora/updates/18
 %packages
-@firefox
-@gnome-desktop
-@base-x
-@base
-@core
-@fonts
-@input-methods
-@admin-tools
-@hardware-support
-
-# Explicitly specified here:
-# <notting> walters: because otherwise dependency loops cause yum issues.
-kernel
 
 # The point of a live image is to install
 anaconda
@@ -96,112 +68,10 @@ spice-gtk
 gtk-vnc-python
 net-tools
 libvirt
+-libreoffice
 %end
 
 %post
-# FIXME: it'd be better to get this installed from a package
-cat > /etc/rc.d/init.d/livesys << EOF
-#!/bin/bash
-#
-# live: Init script for live image
-#
-# chkconfig: 345 00 99
-# description: Init script for live image.
-
-. /etc/init.d/functions
-
-if ! strstr "\`cat /proc/cmdline\`" liveimg || [ "\$1" != "start" ]; then
-    exit 0
-fi
-
-if [ -e /.liveimg-configured ] ; then
-    configdone=1
-fi
-
-exists() {
-    which \$1 >/dev/null 2>&1 || return
-    \$*
-}
-
-touch /.liveimg-configured
-
-# Make sure we don't mangle the hardware clock on shutdown
-ln -sf /dev/null /etc/systemd/system/hwclock-save.service
-
-livedir="LiveOS"
-for arg in \`cat /proc/cmdline\` ; do
-  if [ "\${arg##live_dir=}" != "\${arg}" ]; then
-    livedir=\${arg##live_dir=}
-    return
-  fi
-done
-
-# enable swaps unless requested otherwise
-swaps=\`blkid -t TYPE=swap -o device\`
-if ! strstr "\`cat /proc/cmdline\`" noswap && [ -n "\$swaps" ] ; then
-  for s in \$swaps ; do
-    action "Enabling swap partition \$s" swapon \$s
-  done
-fi
-if ! strstr "\`cat /proc/cmdline\`" noswap && [ -f /run/initramfs/live/\${livedir}/swap.img ] ; then
-  action "Enabling swap file" swapon /run/initramfs/live/\${livedir}/swap.img
-fi
-
-mountPersistentHome() {
-  # support label/uuid
-  if [ "\${homedev##LABEL=}" != "\${homedev}" -o "\${homedev##UUID=}" != "\${homedev}" ]; then
-    homedev=\`/sbin/blkid -o device -t "\$homedev"\`
-  fi
-
-  # if we're given a file rather than a blockdev, loopback it
-  if [ "\${homedev##mtd}" != "\${homedev}" ]; then
-    # mtd devs don't have a block device but get magic-mounted with -t jffs2
-    mountopts="-t jffs2"
-  elif [ ! -b "\$homedev" ]; then
-    loopdev=\`losetup -f\`
-    if [ "\${homedev##/run/initramfs/live}" != "\${homedev}" ]; then
-      action "Remounting live store r/w" mount -o remount,rw /run/initramfs/live
-    fi
-    losetup \$loopdev \$homedev
-    homedev=\$loopdev
-  fi
-
-  # if it's encrypted, we need to unlock it
-  if [ "\$(/sbin/blkid -s TYPE -o value \$homedev 2>/dev/null)" = "crypto_LUKS" ]; then
-    echo
-    echo "Setting up encrypted /home device"
-    plymouth ask-for-password --command="cryptsetup luksOpen \$homedev EncHome"
-    homedev=/dev/mapper/EncHome
-  fi
-
-  # and finally do the mount
-  mount \$mountopts \$homedev /home
-  # if we have /home under what's passed for persistent home, then
-  # we should make that the real /home.  useful for mtd device on olpc
-  if [ -d /home/home ]; then mount --bind /home/home /home ; fi
-  [ -x /sbin/restorecon ] && /sbin/restorecon /home
-  if [ -d /home/liveuser ]; then USERADDARGS="-M" ; fi
-}
-
-findPersistentHome() {
-  for arg in \`cat /proc/cmdline\` ; do
-    if [ "\${arg##persistenthome=}" != "\${arg}" ]; then
-      homedev=\${arg##persistenthome=}
-      return
-    fi
-  done
-}
-
-if strstr "\`cat /proc/cmdline\`" persistenthome= ; then
-  findPersistentHome
-elif [ -e /run/initramfs/live/\${livedir}/home.img ]; then
-  homedev=/run/initramfs/live/\${livedir}/home.img
-fi
-
-# if we have a persistent /home, then we want to go ahead and mount it
-if ! strstr "\`cat /proc/cmdline\`" nopersistenthome && [ -n "\$homedev" ] ; then
-  action "Mounting persistent /home" mountPersistentHome
-fi
 
 # make it so that we don't do writing to the overlay for things which
 # are just tmpdirs/caches
@@ -326,6 +196,7 @@ cp /usr/bin/openstack-demo-install /tmp
 sed -i "s/ROOT_DB_PW=\\\$(getpassword 'database root')/ROOT_DB_PW=\"mypwd\"/" /tmp/openstack-demo-install
 ./tmp/openstack-demo-install
 
+cp /root/keystonerc /home/liveuser
 EOF
 
 chmod 755 /etc/rc.d/init.d/livesys
@@ -346,7 +217,6 @@ rm -f /var/lib/rpm/__db*
 
 # go ahead and pre-make the man -k cache (#455968)
 /usr/bin/mandb
-
 # save a little bit of space at least...
 rm -f /boot/initramfs*
 # make sure there aren't core files lying around
